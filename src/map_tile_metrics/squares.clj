@@ -35,7 +35,15 @@
     (into #{} (filter #(>= (:size %) min-size) (mapcat squares-in-cluster-with-borders clusters-with-borders)))))
 
 (defn max-squares
-  "Returns a set of the max-squares with the minimum size of 4x4."
+  "Returns a set of the max-squares with the minimum size of 4x4.
+   
+   Pass the clusters and all visited tiles.
+
+   Example:
+     clusters: #{#{:x 1 :y 1} #{:x 2 :y 2} ...}
+     tiles: #{:x 1 :y 1 :x 2 :y 2 ...}
+   
+     (max-squares clusters tiles) => #{:x 1 :y 1 :size 4}"
   [clusters tiles]
   (let [min-square-size 4
         squares (squares clusters tiles min-square-size)

@@ -178,8 +178,8 @@ The expected JSON object should look like this:
 
 ```text
 [
-  {"x": number, "y": number},
-  {"x": number, "y": number},
+  {"x": Integer, "y": Integer},
+  {"x": Integer, "y": Integer},
   ...
 ]
 ```

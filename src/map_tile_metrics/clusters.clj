@@ -42,7 +42,13 @@
   (calculate-clusters (cluster-lut tiles)))
 
 (defn max-clusters
-  "Returns all clusters of the maximum size"
+  "Returns all clusters of the maximum size
+   
+   Example: 
+     Clusters: #{ #{:x 2 :y 2, :x 3 :y 3} ...}
+     Tiles: #{:x 1 :y 1, :x 2 :y 2, :x 3 :y 3 ...}
+
+     (max-clusters clusters) => #{ #{:x 2 :y 2, :x 3 :y 3} ...}"
   [clusters]
   (if (empty? clusters)
     #{}
