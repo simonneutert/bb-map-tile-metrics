@@ -7,9 +7,11 @@
   (every? #(contains? cluster %) grid))
 
 (defn- build-grid-square [tile steps]
-  (for [x (range (:x tile) (+ (:x tile) (inc steps)))
-        y (range (:y tile) (+ (:y tile) (inc steps)))]
-    {:x x :y y}))
+  (flatten
+   (for [step (range 0 steps)]
+     [{:x (+ (:x tile) steps) :y (+ (:y tile) step)}
+      {:x (+ (:x tile) step) :y (+  (:y tile) steps)}
+      {:x (+ steps (:x tile)) :y (+ steps (:y tile))}])))
 
 (defn- max-square-from-tile
   [tile cluster]
