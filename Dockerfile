@@ -1,4 +1,4 @@
-FROM babashka/babashka:1.4.192
+FROM babashka/babashka:1.12.194
 
 ENV WORKDIR=/app
 WORKDIR ${WORKDIR}
