@@ -2,6 +2,7 @@
   (:require [babashka.cli :as cli]
             [babashka.fs :as fs]
             [cheshire.core :as json]
+            [clojure.edn :as edn]
             [map-tile-metrics.utils :as utils]
             [map-tile-metrics.clusters :as clusters]
             [map-tile-metrics.squares :as squares]))
@@ -9,7 +10,6 @@
 (defn show-help
   [spec]
   (cli/format-opts (merge spec {:order (vec (keys (:spec spec)))})))
-
 (def cli-spec
   {:spec
    {:json {:desc "json content string"
@@ -20,7 +20,7 @@
           :require false}
     :file {:desc "file to read"
            :alias :f ; adds -f alias for --file
-           :validate fs/exists?}} ; tests if --file exists 
+           :validate fs/exists?}} ; tests if --file exists
    :error-fn ; a function to handle errors
    (fn [{:keys [spec type cause msg option] :as data}]
      (if (= :org.babashka/cli type)
@@ -31,7 +31,6 @@
          :validate
          (println
           (format "%s does not exist!\n" msg)))))})
-
 (def cli-options {:json {:default "[{\"x:\" 0, \"y:\" 0}]"}
                   :help {:coerce :boolean}})
 
@@ -42,9 +41,8 @@
        (utils/into-lookup-table)))
 
 (defn from-edn [opts]
-  (->> (pmap clojure.walk/keywordize-keys (read-string (:edn opts)))
+  (->> (edn/read-string (:edn opts))
        (utils/into-lookup-table)))
-
 (defn -main
   [& args]
   (let [opts (cli/parse-opts args cli-spec)]
