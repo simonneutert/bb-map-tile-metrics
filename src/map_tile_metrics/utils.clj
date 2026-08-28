@@ -1,45 +1,66 @@
 (ns map-tile-metrics.utils
   (:require [cheshire.core :as json]
-            [clojure.string :as str]
-            [clojure.edn :as edn]))
+            [clojure.edn :as edn]
+            [clojure.string :as str]))
 
-(defn neighbors [tile]
-  (for [[x y] [[0 -1] [1 0] [0 1] [-1 0]]]
-    {:x (+ x (:x tile))
-     :y (+ y (:y tile))}))
+(defn neighbors
+  "Returns the four cardinal neighbors of a tile."
+  [{:keys [x y]}]
+  [{:x x :y (dec y)}
+   {:x (inc x) :y y}
+   {:x x :y (inc y)}
+   {:x (dec x) :y y}])
 
-(defn all-neighbors [tile]
-  (for [[x y] [[0 -1] [1 -1] [1 0] [1 1] [0 1] [-1 -1] [-1 0] [-1 1]]]
-    {:x (+ x (:x tile))
-     :y (+ y (:y tile))}))
+(defn all-neighbors
+  "Returns all eight surrounding neighbors of a tile."
+  [{:keys [x y]}]
+  [{:x x :y (dec y)}
+   {:x (inc x) :y (dec y)}
+   {:x (inc x) :y y}
+   {:x (inc x) :y (inc y)}
+   {:x x :y (inc y)}
+   {:x (dec x) :y (dec y)}
+   {:x (dec x) :y y}
+   {:x (dec x) :y (inc y)}])
+
 (defn real-neighbors
-  "lut should be a set, due to `contains?`"
+  "Returns cardinal neighbors of tile that are present in lut.
+   lut must support contains?, normally a set of {:x ... :y ...} maps."
   [tile lut]
-  (let [neighbors (neighbors tile)]
-    (filter #(contains? lut %) neighbors)))
+  (filter #(contains? lut %) (neighbors tile)))
 
-(defn- normalize-tile [tile]
-  (if (contains? tile :x)
-    tile
-    (reduce-kv (fn [normalized key value]
-                 (assoc normalized
-                        (if (string? key) (keyword key) key)
-                        value))
-               {}
-               tile)))
+(defn- coordinate
+  [tile key]
+  (if (contains? tile key)
+    (get tile key)
+    (get tile (name key))))
 
-(defn into-lookup-table [data]
+(defn- normalize-tile
+  "Canonicalizes a tile to the x/y point representation used internally.
+   String keys are accepted and extra keys such as z are intentionally ignored."
+  [tile]
+  {:x (coordinate tile :x)
+   :y (coordinate tile :y)})
+
+(defn into-lookup-table
+  "Returns input tiles as a canonical x/y lookup set.
+
+   Both keyword and string coordinate keys are accepted. Extra tile metadata,
+   including an optional common zoom level, is discarded because all metrics
+   operate on x/y coordinates only."
+  [data]
   (into #{} (map normalize-tile) data))
 
 (defn read-data-from-file
-  "Returns a set of the tiles in the given file.
-
-   #{{:x 1 :y 1} {:x 2 :y 1} ...}
-   "
+  "Reads a .json or .edn tile file into a canonical x/y lookup set."
   [filename]
   (let [content (slurp filename)]
     (cond
-      (str/ends-with? filename ".json") (into-lookup-table (json/parse-string content true))
-      (str/ends-with? filename ".edn") (into-lookup-table (edn/read-string content))
+      (str/ends-with? filename ".json")
+      (into-lookup-table (json/parse-string content true))
+
+      (str/ends-with? filename ".edn")
+      (into-lookup-table (edn/read-string content))
+
       :else
       (throw (ex-info "Unsupported file type" {:filename filename})))))
