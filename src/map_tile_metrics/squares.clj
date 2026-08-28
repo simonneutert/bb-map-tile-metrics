@@ -1,115 +1,119 @@
-(ns map-tile-metrics.squares
-  (:require [map-tile-metrics.utils :as utils]))
+(ns map-tile-metrics.squares)
+
+(def ^:private min-square-size 4)
+(def ^:private min-inner-size (- min-square-size 2))
+
+(defn- required-cluster-size
+  "Minimum cluster tile count needed to contain a square of square-size."
+  [square-size]
+  (let [inner-size (- square-size 2)]
+    (* inner-size inner-size)))
 
 (defn- tile-rows
-  "Groups visited tile x coordinates by y coordinate."
-  [tiles]
+  "Groups cluster x coordinates by y coordinate."
+  [cluster]
   (reduce (fn [rows {:keys [x y]}]
-            (assoc rows y (conj (get rows y #{}) x)))
+            (assoc rows y (conj (get rows y []) x)))
           {}
-          tiles))
+          cluster))
 
-(defn- reduce-square-sizes
-  "Runs maximal-square DP from bottom-right to top-left.
+(defn- keep-max
+  [{:keys [max-size squares] :as result} {:keys [size] :as square}]
+  (cond
+    (> size max-size)
+    {:max-size size :squares #{square}}
 
-   Calls f with acc, x, y and the largest square size whose top-left
-   coordinate is x/y. Only one row of DP state is kept at a time."
-  [tiles init f]
-  (let [rows (tile-rows tiles)]
+    (= size max-size)
+    {:max-size max-size :squares (conj squares square)}
+
+    :else
+    result))
+
+(defn- largest-valid-square
+  "Returns the largest visited square represented by an interior cluster square.
+
+   Cluster membership guarantees every outer edge tile except the four corners.
+   The top-left corner is shared by all candidate sizes, so a missing corner can
+   reject the whole candidate immediately."
+  [tiles x y max-inner-size min-worthwhile-inner-size]
+  (let [left (dec x)
+        top (dec y)]
+    (when (contains? tiles {:x left :y top})
+      (loop [inner-size max-inner-size]
+        (when (>= inner-size min-worthwhile-inner-size)
+          (let [right (+ x inner-size)
+                bottom (+ y inner-size)]
+            (if (and (contains? tiles {:x right :y top})
+                     (contains? tiles {:x left :y bottom})
+                     (contains? tiles {:x right :y bottom}))
+              {:x left
+               :y top
+               :size (+ inner-size 2)}
+              (recur (dec inner-size)))))))))
+
+(defn- scan-cluster
+  "Updates the global max-square result using one cluster.
+
+   DP runs bottom-right to top-left and keeps one row of state. Candidates that
+   cannot tie or beat the current global maximum are skipped."
+  [cluster tiles initial-result]
+  (let [rows (tile-rows cluster)]
     (loop [ys (seq (sort > (keys rows)))
            below-y nil
            below {}
-           acc init]
+           result initial-result]
       (if-let [y (first ys)]
         (let [below (if (= below-y (inc y)) below {})
-              [current acc]
+              [current result]
               (loop [xs (seq (sort > (get rows y)))
                      current {}
-                     acc acc]
+                     result result]
                 (if-let [x (first xs)]
-                  (let [size (inc (min (get current (inc x) 0)
-                                       (get below x 0)
-                                       (get below (inc x) 0)))]
-                    (recur (next xs)
-                           (assoc current x size)
-                           (f acc x y size)))
-                  [current acc]))]
-          (recur (next ys) y current acc))
-        acc))))
-
-(defn- square-sizes-by-coordinate
-  [tiles]
-  (reduce-square-sizes tiles {}
-                       (fn [sizes x y size]
-                         (assoc sizes [x y] size))))
-
-(defn- max-square-from-tile
-  [tile cluster]
-  (assoc tile
-         :size
-         (get (square-sizes-by-coordinate cluster)
-              [(:x tile) (:y tile)]
-              0)))
-
-(defn- squares-in-cluster-with-borders
-  "Returns each tile with the largest square size starting at that tile."
-  [cluster-with-borders]
-  (reduce-square-sizes
-   cluster-with-borders
-   #{}
-   (fn [result x y size]
-     (conj result {:x x :y y :size size}))))
-
-(defn- add-borders-to-clusters
-  "Returns the cluster with the border tiles as a set.
-
-   Kept for compatibility with the existing tests; square calculation no
-   longer needs cluster expansion."
-  [cluster tiles]
-  (let [neighbors (set (mapcat utils/all-neighbors cluster))
-        cluster-with-border-tiles (apply conj neighbors cluster)]
-    (into #{} (filter #(contains? tiles %) cluster-with-border-tiles))))
-
-(defn- squares
-  "Returns the largest square starting at each visited tile whose size is at
-   least min-size. The clusters argument is retained for API compatibility."
-  [_clusters tiles min-size]
-  (reduce-square-sizes
-   tiles
-   #{}
-   (fn [result x y size]
-     (if (>= size min-size)
-       (conj result {:x x :y y :size size})
-       result))))
+                  (let [inner-size (inc (min (get current (inc x) 0)
+                                             (get below x 0)
+                                             (get below (inc x) 0)))
+                        current (assoc current x inner-size)
+                        min-worthwhile-inner-size
+                        (max min-inner-size (- (:max-size result) 2))
+                        result
+                        (if (< inner-size min-worthwhile-inner-size)
+                          result
+                          (if-let [square (largest-valid-square
+                                           tiles
+                                           x y
+                                           inner-size
+                                           min-worthwhile-inner-size)]
+                            (keep-max result square)
+                            result))]
+                    (recur (next xs) current result))
+                  [current result]))]
+          (recur (next ys) y current result))
+        result))))
 
 (defn max-squares
-  "Returns a set of the max-squares with the minimum size of 4x4.
+  "Returns all maximum filled squares with an edge length of at least 4.
 
-   Pass the clusters and all visited tiles. The clusters argument is retained
-   for API compatibility; maximal squares are calculated directly from tiles.
+   Any filled square of size s >= 4 has a filled (s-2)x(s-2) interior whose
+   tiles all belong to one cluster. DP therefore runs only on cluster interiors;
+   validating the four outer corners is sufficient to prove the full square.
 
-   Example:
-     clusters: #{#{:x 1 :y 1} #{:x 2 :y 2} ...}
-     tiles: #{:x 1 :y 1 :x 2 :y 2 ...}
-
-     (max-squares clusters tiles) => #{{:x 1 :y 1 :size 4}}"
-  [_clusters tiles]
-  (:squares
-   (reduce-square-sizes
-    tiles
-    {:max-size 0 :squares #{}}
-    (fn [{:keys [max-size squares] :as result} x y size]
-      (cond
-        (< size 4)
-        result
-
-        (> size max-size)
-        {:max-size size
-         :squares #{{:x x :y y :size size}}}
-
-        (= size max-size)
-        {:max-size max-size
-         :squares (conj squares {:x x :y y :size size})}
-
-        :else
-        result)))))
+   Clusters are processed largest-first. Once a maximum is known, processing
+   stops when the remaining clusters are too small even to tie it."
+  [clusters tiles]
+  (let [minimum-cluster-size (required-cluster-size min-square-size)
+        eligible-clusters (sort-by count >
+                                   (filter #(>= (count %) minimum-cluster-size)
+                                           clusters))]
+    (:squares
+     (loop [remaining (seq eligible-clusters)
+            result {:max-size 0 :squares #{}}]
+       (if-let [cluster (first remaining)]
+         (let [best-size (:max-size result)
+               required-size (if (>= best-size min-square-size)
+                               (required-cluster-size best-size)
+                               minimum-cluster-size)]
+           (if (< (count cluster) required-size)
+             result
+             (recur (next remaining)
+                    (scan-cluster cluster tiles result))))
+         result)))))
